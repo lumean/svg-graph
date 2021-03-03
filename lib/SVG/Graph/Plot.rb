@@ -146,6 +146,8 @@ module SVG
       attr_accessor :show_lines
       # Round value of data points in popups to integer, default: true
       attr_accessor :round_popups
+      # Apply a padding before the first x datapoint
+      attr_accessor :min_x_padding
 
 
       # Adds data to the plot.  The data must be in X,Y pairs; EG
@@ -232,110 +234,124 @@ module SVG
         @max_x_cache = @min_x_cache = @max_y_cache = @min_y_cache = nil
       end
 
-      def max_x_range
+      def max_x_datapoint
         return @max_x_cache unless @max_x_cache.nil?
 
-        # needs to be computed fresh when called, to cover the use-case:
-        # add_data -> burn -> add_data -> burn
-        # when values would be cached, the graph is not updated for second burning
-        max_value = @data.collect{|x| x[:data][X][-1] }.max
-        max_value = max_value > max_x_value ? max_value : max_x_value if max_x_value
-        @max_x_cache = max_value
+        @max_x_cache = @data.collect { |x| x[:data][X][-1] }.max
         @max_x_cache
       end
 
-      def min_x_range
+      def min_x_datapoint
         return @min_x_cache unless @min_x_cache.nil?
 
-        # needs to be computed fresh when called, to cover the use-case:
-        # add_data -> burn -> add_data -> burn
-        # when values would be cached, the graph is not updated for second burning
-        min_value = @data.collect{|x| x[:data][X][0] }.min
-        min_value = min_value < min_x_value ? min_value : min_x_value if min_x_value
-        @min_x_cache = min_value
+        @min_x_cache = @data.collect { |x| x[:data][X][0] }.min
         @min_x_cache
       end
 
-      def x_label_range
-        max_value = max_x_range
-        min_value = min_x_range
-        range = max_value - min_value
-        # add some padding on right
-        if range == 0
-          max_value += 10
-        else
-          max_value += range / 20.0
-        end
-        scale_range = max_value - min_value
+      # allow the range to be extended from the datapoint max.
+      def max_x_range
+        max_value = max_x_datapoint
 
-        scale_division = scale_x_divisions || (scale_range / 9.0)
-        @x_offset = 0
+        if max_x_value
+          max_value = max_value > max_x_value ? max_value : max_x_value
+        else
+          min_value = min_x_datapoint
+          range = max_value - min_value
+          if range.zero?
+            max_value += 10
+          else
+            max_value += range / 20.0
+          end
+        end
+        max_value
+      end
+
+      def min_x_range
+        min_value = min_x_datapoint
+        if min_x_value
+          min_value = min_value < min_x_value ? min_value : min_x_value if min_x_value
+        elsif min_x_padding
+          max_value = max_x_datapoint
+          range = max_value - min_value
+          if range.zero?
+            min_value -= 10
+          else
+            min_value -= range / 20.0
+          end
+        end
 
         if scale_x_integers
-          scale_division = scale_division < 1 ? 1 : scale_division.ceil
-          @x_offset = min_value.to_f - min_value.floor
           min_value = min_value.floor
         end
 
-        [min_value, max_value, scale_division]
+        min_value
       end
 
       def get_x_values
-        min_value, max_value, @x_scale_division = x_label_range
-        x_times = ((max_value-min_value)/@x_scale_division).round + 1
+        max_value = max_x_range
+        min_value = min_x_range
+        scale_range = max_value - min_value
+
+        scale_division = scale_x_divisions || (scale_range / 9.0)
+        if scale_x_integers
+          scale_division = scale_division < 1 ? 1 : scale_division.ceil
+        end
+        @x_scale_division = scale_division
+
+        x_times = ((max_value.to_f - min_value) / @x_scale_division.to_f).ceil + 1
         rv = []
-        x_times.times{|v| rv << (min_value + (v * @x_scale_division))}
-        return rv
+        x_times.times { |i| rv << (min_value + @x_scale_division * i) }
+        rv
       end
       alias :get_x_labels :get_x_values
 
-      def field_width
-        # exclude values which are outside max_x_range
-        values = get_x_values
-        @graph_width.to_f / (values.length - 1 ) # -1 is to use entire x-axis
-                                                 # otherwise there is always 1 division unused
-      end
-
-      def max_y_range
+      def max_y_datapoint
         return @max_y_cache unless @max_y_cache.nil?
 
-        max_value = @data.collect{|x| x[:data][Y].max }.max
-        max_value = max_value > max_y_value ? max_value : max_y_value if max_y_value
-        @max_y_cache = max_value
+        @max_y_cache = @data.collect{|x| x[:data][Y].max }.max
         @max_y_cache
       end
 
-      def min_y_range
+      def max_y_range
+        max_value = max_y_datapoint
+
+        if max_y_value
+          max_value = max_value > max_y_value ? max_value : max_y_value
+        else
+          min_value = min_y_datapoint
+          range = max_value - min_value
+          # add some padding on top
+          if range.zero?
+            max_value += 10
+          else
+            max_value += range / 20.0
+          end
+        end
+        max_value
+      end
+
+      def min_y_datapoint
         return @min_y_cache unless @min_y_cache.nil?
 
-        # needs to be computed fresh when called, to cover the use-case:
-        # add_data -> burn -> add_data -> burn
-        # when values would be cached, the graph is not updated for second burning
-        min_value = @data.collect{|x| x[:data][Y].min }.min
-        min_value = min_value < min_y_value ? min_value : min_y_value if min_y_value
-        @min_y_cache = min_value
+        @min_y_cache = @data.collect{|x| x[:data][Y].min }.min
         @min_y_cache
+      end
+
+      def min_y_range
+        min_value = min_y_datapoint
+        min_value = min_value < min_y_value ? min_value : min_y_value if min_y_value
+        min_value
       end
 
       def y_label_range
         max_value = max_y_range
         min_value = min_y_range
-        range = max_value - min_value
-        # add some padding on top
-        if range == 0
-          max_value += 10
-        else
-          max_value += range / 20.0
-        end
         scale_range = max_value - min_value
 
         scale_division = scale_y_divisions || (scale_range / 9.0)
-        @y_offset = 0
 
         if scale_y_integers
           scale_division = scale_division < 1 ? 1 : scale_division.ceil
-          @y_offset = (min_value.to_f - min_value.floor).to_f
-          min_value = min_value.floor
         end
 
         return [min_value, max_value, scale_division]
@@ -348,31 +364,19 @@ module SVG
             @y_scale_division /= 9.0
           end
         end
+        y_times = ((max_value.to_f - min_value) / @y_scale_division.to_f).ceil + 1
         rv = []
-        min_value.step( max_value + @y_scale_division, @y_scale_division ) {|v| rv << v}
-        rv << rv[0] + 1 if rv.length == 1
-        return rv
+        y_times.times { |i| rv << (min_value + @y_scale_division * i) }
+        rv
       end
       alias :get_y_labels :get_y_values
-
-      def field_height
-        # exclude values which are outside max_x_range
-        values = get_y_values
-        max = max_y_range
-        if values.length == 1
-          dx = values[-1]
-        else
-          dx = (max - values[-1]).to_f / (values[-1] - values[-2])
-        end
-        @graph_height.to_f / (values.length - 1)
-      end
 
       def calc_coords(x, y)
         coords = {:x => 0, :y => 0}
         # scale the coordinates, use float division / multiplication
         # otherwise the point will be place inaccurate
-        coords[:x] = (x + @x_offset)/@x_scale_division.to_f * field_width
-        coords[:y] = @graph_height - (y + @y_offset)/@y_scale_division.to_f * field_height
+        coords[:x] = x/@x_scale_division.to_f * field_width
+        coords[:y] = @graph_height - y/@y_scale_division.to_f * field_height
         return coords
       end
 

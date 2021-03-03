@@ -206,19 +206,29 @@ module SVG
       end
 
       def get_x_values
+        max_value = max_x_range
+        min_value = min_x_range
+        scale_range = max_value - min_value
+
+        scale_division = scale_x_divisions || (scale_range / 9.0)
+
+        if scale_x_integers
+          scale_division = scale_division < 1 ? 1 : scale_division.ceil
+        end
+        @x_scale_division = scale_division
+
         rv = []
-        min, max, @x_scale_division = x_label_range
         if timescale_divisions
           timescale_divisions =~ /(\d+) ?(day|week|month|year|hour|minute|second)?/
           division_units = $2 ? $2 : "day"
           amount = $1.to_i
           if amount
-            step =  nil
+            step = nil
             case division_units
             when "month"
-              cur = min
+              cur = min_value
               @x_scale_division = 365.25/12 * 24 * 60 * 60 * amount
-              while cur < max
+              while cur < max_value
                 rv << cur
                 arr = Time.at( cur ).to_a
                 arr[4] += amount
@@ -229,9 +239,9 @@ module SVG
                 cur = Time.local(*arr).to_i
               end
             when "year"
-              cur = min
+              cur = min_value
               @x_scale_division = 365.25 * 24 * 60 * 60 * amount
-              while cur < max
+              while cur < max_value
                 rv << cur
                 arr = Time.at( cur ).to_a
                 arr[5] += amount
@@ -249,13 +259,18 @@ module SVG
               step = amount
             end
             # only do this if division_units is not year or month. Those are done already above in the cases.
-            min.step( max + (step/10), step ) {|v| rv << v} if step
-            @x_scale_division = step if step
+            if step
+              @x_scale_division = step
+              x_times = ((max_value.to_f - min_value) / @x_scale_division.to_f).ceil + 1
+              x_times.times { |i| rv << (min_value + @x_scale_division * i) }
+            end
             return rv
           end
         end
-        min.step( max + (@x_scale_division/10), @x_scale_division ) {|v| rv << v}
-        return rv
+        # if we haven't returned anything, fall back to @x_scale_division
+        x_times = ((max_value.to_f - min_value) / @x_scale_division.to_f).ceil + 1
+        x_times.times { |i| rv << (min_value + @x_scale_division * i) }
+        rv
       end # get_x_values
 
     end # class TimeSeries

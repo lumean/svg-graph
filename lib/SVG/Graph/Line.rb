@@ -71,7 +71,7 @@ module SVG
     # Copyright 2004 Sean E. Russell
     # This software is available under the Ruby license[LICENSE.txt]
     #
-    class Line < SVG::Graph::Graph
+    class Line < Graph
       #    Show a small circle on the graph where the line
       #    goes from one point to the next.
       attr_accessor :show_data_points
